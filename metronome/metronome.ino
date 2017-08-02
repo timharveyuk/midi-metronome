@@ -1,36 +1,21 @@
 #include <Encoder.h>
-
 #include <SendOnlySoftwareSerial.h>
 #include <TimerOne.h>
 
-volatile boolean TurnDetected;  // need volatile for Interrupts
-volatile boolean rotationdirection;  // CW or CCW rotation
 
 const int PinCLK = 2; // Generating interrupts using CLK signal
 const int PinDT = 3;  // Reading DT signal
 const int PinSW = 4;  // Reading Push Button switch
 
-Encoder knobLeft(2, 3);
-long positionLeft  = -999;
-
+Encoder rotaryKnob(PinCLK, PinDT);
 
 volatile bool buttonDown = false;
-volatile bool pulseReceived = false;
+volatile bool sendMidiClock = false;
 volatile bool isRunning = false;
 
-// Interrupt routine runs if CLK goes from HIGH to LOW
-void isr ()  {
-  delay(4);  // delay for Debouncing
-  if (digitalRead(PinCLK))
-    rotationdirection = digitalRead(PinDT);
-  else
-    rotationdirection = !digitalRead(PinDT);
-  TurnDetected = true;
-}
-
-// Interrupt routine runs if CLK goes from HIGH to LOW
+// Timer1 interrupt requesting midi clock signal to be sent
 void pulse ()  {
-  pulseReceived = true;
+  sendMidiClock = true;
 }
 
 const int PinBtn = 7; //Button - replaced by rotary button
@@ -41,8 +26,6 @@ const byte midiStart = 250;
 const byte midiStop = 252;
 const byte midiClock = 248;
 
-
-
 int bpm = 80;
 int beatsPerBar = 4;
 
@@ -51,26 +34,22 @@ int pulseCount = -1;
 int beatCount = -1;
 
 // If using buzzer
-int buzzer = 12;//the pin of the active buzzer
+int buzzer = 6;//the pin of the active buzzer
 int newBarBuzzerWait = 15;
 int inBarBuzzerWait = 8;
 
-SendOnlySoftwareSerial mySerial(9);
+SendOnlySoftwareSerial mySerial(5);
 
 void setup() {
   mySerial.begin(31250);
   Serial.begin(9200);
 
   pinMode(buzzer, OUTPUT); //initialize the buzzer pin as an output
-
   pinMode(PinBtn, INPUT_PULLUP);
-  //attachInterrupt(0, Reset, FALLING);
-
-  //pinMode(PinCLK, INPUT);
-  //pinMode(PinDT, INPUT);
   pinMode(PinSW, INPUT);
   digitalWrite(PinSW, HIGH); // Pull-Up resistor for switch
-  //attachInterrupt (0, isr, FALLING); // interrupt 0 always connected to pin 2 on Arduino UNO
+
+  rotaryKnob.write(bpm*4);
 
   Timer1.initialize();
   UpdateBpm();
@@ -82,27 +61,12 @@ void loop() {
 
   checkForButtonPress();
 
-  //checkForRotaryTurn();
-  long newLeft, newRight;
-  newLeft = knobLeft.read();
-  if (newLeft != positionLeft) {
-    Serial.print("Left = ");
-    Serial.print(newLeft);
-    Serial.println();
-    positionLeft = newLeft;
-  }
-  // if a character is sent from the serial monitor,
-  // reset both back to zero.
-  if (Serial.available()) {
-    Serial.read();
-    Serial.println("Reset both knobs to zero");
-    knobLeft.write(0);
-  }
+  checkForRotaryTurn();
 }
 
-void checkForPulse(){
+void checkForPulse() {
 
-    if (isRunning && pulseReceived) {
+  if (isRunning && sendMidiClock) {
     pulseCount = (pulseCount + 1) % pulsesPerBeat;
     if (pulseCount == 0) {
       beatCount = (beatCount + 1) % beatsPerBar;
@@ -117,11 +81,11 @@ void checkForPulse(){
     else {
       SendMidiCommand(midiClock);
     }
-    pulseReceived = false;
+    sendMidiClock = false;
   }
 }
 
-void checkForButtonPress(){
+void checkForButtonPress() {
   if (!(digitalRead(PinSW))) {   // check if button is pressed
     if (!buttonDown) {
       Reset();
@@ -133,18 +97,19 @@ void checkForButtonPress(){
   }
 }
 
-void checkForRotaryTurn(){
-  if (TurnDetected)  {
-    if (rotationdirection && bpm < 220) {
-      bpm++;
-      UpdateBpm();
-    }
-    else if (!rotationdirection && bpm > 20) {
-      bpm--;
-      UpdateBpm();
-    }
-
-    TurnDetected = false;  // do NOT repeat IF loop until new rotation detected
+void checkForRotaryTurn() {
+  long newBpm;
+  newBpm = rotaryKnob.read()/4;
+  if (newBpm != bpm) {
+    bpm = newBpm;
+    UpdateBpm();
+  }
+  // if a character is sent from the serial monitor,
+  // reset both back to zero.
+  if (Serial.available()) {
+    Serial.read();
+    Serial.println("Reset knob to zero");
+    rotaryKnob.write(0);
   }
 }
 
