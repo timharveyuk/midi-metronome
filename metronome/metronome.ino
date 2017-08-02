@@ -1,8 +1,7 @@
-#include <TimerOne.h>
-#include <SoftwareSerial.h>
+#include <Encoder.h>
 
-#define STEPS  32   // Number of steps for one revolution of Internal shaft
-// 2048 steps for one revolution of External shaft
+#include <SendOnlySoftwareSerial.h>
+#include <TimerOne.h>
 
 volatile boolean TurnDetected;  // need volatile for Interrupts
 volatile boolean rotationdirection;  // CW or CCW rotation
@@ -10,6 +9,10 @@ volatile boolean rotationdirection;  // CW or CCW rotation
 const int PinCLK = 2; // Generating interrupts using CLK signal
 const int PinDT = 3;  // Reading DT signal
 const int PinSW = 4;  // Reading Push Button switch
+
+Encoder knobLeft(2, 3);
+long positionLeft  = -999;
+
 
 volatile bool buttonDown = false;
 volatile bool pulseReceived = false;
@@ -52,7 +55,7 @@ int buzzer = 12;//the pin of the active buzzer
 int newBarBuzzerWait = 15;
 int inBarBuzzerWait = 8;
 
-SoftwareSerial mySerial(10, 9);
+SendOnlySoftwareSerial mySerial(9);
 
 void setup() {
   mySerial.begin(31250);
@@ -63,11 +66,11 @@ void setup() {
   pinMode(PinBtn, INPUT_PULLUP);
   //attachInterrupt(0, Reset, FALLING);
 
-  pinMode(PinCLK, INPUT);
-  pinMode(PinDT, INPUT);
+  //pinMode(PinCLK, INPUT);
+  //pinMode(PinDT, INPUT);
   pinMode(PinSW, INPUT);
   digitalWrite(PinSW, HIGH); // Pull-Up resistor for switch
-  attachInterrupt (0, isr, FALLING); // interrupt 0 always connected to pin 2 on Arduino UNO
+  //attachInterrupt (0, isr, FALLING); // interrupt 0 always connected to pin 2 on Arduino UNO
 
   Timer1.initialize();
   UpdateBpm();
@@ -79,7 +82,22 @@ void loop() {
 
   checkForButtonPress();
 
-  checkForRotaryTurn();
+  //checkForRotaryTurn();
+  long newLeft, newRight;
+  newLeft = knobLeft.read();
+  if (newLeft != positionLeft) {
+    Serial.print("Left = ");
+    Serial.print(newLeft);
+    Serial.println();
+    positionLeft = newLeft;
+  }
+  // if a character is sent from the serial monitor,
+  // reset both back to zero.
+  if (Serial.available()) {
+    Serial.read();
+    Serial.println("Reset both knobs to zero");
+    knobLeft.write(0);
+  }
 }
 
 void checkForPulse(){
