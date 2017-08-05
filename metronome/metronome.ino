@@ -1,6 +1,8 @@
+#include <pitches.h>
 #include <Encoder.h>
 #include <SendOnlySoftwareSerial.h>
 #include <TimerOne.h>
+
 
 
 const int PinCLK = 2; // Generating interrupts using CLK signal
@@ -114,17 +116,22 @@ void checkForRotaryTurn() {
 }
 
 void beepNewBar() {
-  digitalWrite(buzzer, HIGH);
+  
+  //digitalWrite(buzzer, HIGH);
+  tone(12, NOTE_G7, 30);
   SendMidiCommand(midiClock);
-  delay(newBarBuzzerWait - 3);
-  digitalWrite(buzzer, LOW);
+  
+  //delay(newBarBuzzerWait - 3);
+ // digitalWrite(buzzer, LOW);
 }
 
 void beepInBar() {
-  digitalWrite(buzzer, HIGH);
+ // digitalWrite(buzzer, HIGH);
+ tone(12, NOTE_C6, 20);
   SendMidiCommand(midiClock);
-  delay(inBarBuzzerWait - 3);
-  digitalWrite(buzzer, LOW);
+  
+ // delay(inBarBuzzerWait - 3);
+ // digitalWrite(buzzer, LOW);
 }
 
 void Reset()
