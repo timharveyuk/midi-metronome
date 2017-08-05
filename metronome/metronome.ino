@@ -2,7 +2,7 @@
 #include <Encoder.h>
 #include <SendOnlySoftwareSerial.h>
 #include <TimerOne.h>
-
+#include <LiquidCrystal.h>
 
 
 const int PinCLK = 2; // Generating interrupts using CLK signal
@@ -10,6 +10,8 @@ const int PinDT = 3;  // Reading DT signal
 const int PinSW = 4;  // Reading Push Button switch
 
 Encoder rotaryKnob(PinCLK, PinDT);
+
+LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 
 volatile bool buttonDown = false;
 volatile bool sendMidiClock = false;
@@ -19,8 +21,6 @@ volatile bool isRunning = false;
 void pulse ()  {
   sendMidiClock = true;
 }
-
-const int PinBtn = 7; //Button - replaced by rotary button
 
 const unsigned long pulsesPerBeat = 24;
 const unsigned long microSecondsPerMinute = 60000000;
@@ -36,18 +36,20 @@ int pulseCount = -1;
 int beatCount = -1;
 
 // If using buzzer
-int buzzer = 6;//the pin of the active buzzer
+int PinBuzzer = 6;//the pin of the active buzzer
 int newBarBuzzerWait = 15;
 int inBarBuzzerWait = 8;
 
 SendOnlySoftwareSerial mySerial(5);
 
 void setup() {
+  lcd.begin(16, 2);
+  UpdateTimeSignature();
+  
   mySerial.begin(31250);
   Serial.begin(9200);
 
-  pinMode(buzzer, OUTPUT); //initialize the buzzer pin as an output
-  pinMode(PinBtn, INPUT_PULLUP);
+  pinMode(PinBuzzer, OUTPUT); //initialize the buzzer pin as an output
   pinMode(PinSW, INPUT);
   digitalWrite(PinSW, HIGH); // Pull-Up resistor for switch
 
@@ -117,21 +119,21 @@ void checkForRotaryTurn() {
 
 void beepNewBar() {
   
-  //digitalWrite(buzzer, HIGH);
-  tone(12, NOTE_G7, 30);
+  //digitalWrite(PinBuzzer, HIGH);
+  tone(PinBuzzer, NOTE_G7, 30);
   SendMidiCommand(midiClock);
   
   //delay(newBarBuzzerWait - 3);
- // digitalWrite(buzzer, LOW);
+ // digitalWrite(PinBuzzer, LOW);
 }
 
 void beepInBar() {
- // digitalWrite(buzzer, HIGH);
- tone(12, NOTE_C6, 20);
+ // digitalWrite(PinBuzzer, HIGH);
+ tone(PinBuzzer, NOTE_C6, 20);
   SendMidiCommand(midiClock);
   
  // delay(inBarBuzzerWait - 3);
- // digitalWrite(buzzer, LOW);
+ // digitalWrite(PinBuzzer, LOW);
 }
 
 void Reset()
@@ -151,7 +153,18 @@ void UpdateBpm() {
 
   waitInterval = (microSecondsPerMinute / bpm) / pulsesPerBeat;
   Timer1.setPeriod(waitInterval);
-  Serial.println(bpm);
+  lcd.setCursor(0, 0);
+  // print the number of seconds since reset:
+  lcd.print("bpm: ");
+  lcd.print(bpm);
+}
+
+void UpdateTimeSignature() {
+  lcd.setCursor(0, 1);
+  // print the number of seconds since reset:
+  lcd.print("time: ");
+  lcd.print(beatsPerBar);
+  lcd.print("/4");
 }
 
 void SendMidiCommand(byte command) {
