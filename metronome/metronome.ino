@@ -1,4 +1,5 @@
 #include "metronome.h"
+#include <EEPROM.h>
 #include <pitches.h>
 #include <Encoder.h>
 #include <SendOnlySoftwareSerial.h>
@@ -48,8 +49,8 @@ const byte midiStart = 250;
 const byte midiStop = 252;
 const byte midiClock = 248;
 
-int bpm = 80;
-int beatsPerBar = 4;
+int bpm = DEFAULT_TEMPO;
+int beatsPerBar = DEFAULT_TS;
 
 unsigned long waitInterval = 0;
 int pulseCount = -1;
@@ -73,15 +74,13 @@ void setup() {
   mySerial.begin(31250);
   Serial.begin(9200);
 
-  settingsButtons[0].bpm = 80;
-  settingsButtons[0].beatsPerBar = 4;
   settingsButtons[0].name = "S1";
   settingsButtons[0].pin = PinBtnS1;
-  settingsButtons[1].bpm = 110;
-  settingsButtons[1].beatsPerBar = 3;
   settingsButtons[1].name = "S2";
   settingsButtons[1].pin = PinBtnS2;
-
+  for(int i=0;i<numSettingButtons;i++){
+    ReadSetting(i);
+  }
 
   pinMode(PinBuzzer, OUTPUT); //initialize the buzzer pin as an output
   pinMode(PinBtnRotary, INPUT);
@@ -161,31 +160,27 @@ void checkSettingsButtons() {
         settingsButtons[i].stored = true;
         settingsButtons[i].bpm = bpm;
         settingsButtons[i].beatsPerBar = beatsPerBar;
+        StoreSetting(i);
         ShowSetting(settingsButtons[i].name);
       }
       settingsButtons[i].buttonDown = true;
-      if (settingsButtons[i].buttonDown) {
-        Serial.println("yes");
-      } else {
-        Serial.println("no");
-      }
     }
     else {
       if (settingsButtons[i].buttonDown && !settingsButtons[i].stored) {
-        Serial.println("2");
-        lcd.setCursor(13, 0);
-        lcd.print(settingsButtons[i].name);
         if (bpm != settingsButtons[i].bpm) {
           bpm = settingsButtons[i].bpm;
           UpdateBpm();
           if (lcdSelectedTopField) {
-            rotaryKnob.write(bpm * 4);
+            UpdateRotary();
           }
         }
         if (beatsPerBar != settingsButtons[i].beatsPerBar) {
           Serial.println("update ts");
           beatsPerBar = settingsButtons[i].beatsPerBar;
           UpdateTimeSignature();
+          if (!lcdSelectedTopField) {
+            UpdateRotary();
+          }
         }
       }
       settingsButtons[i].buttonDown = false;
@@ -198,27 +193,7 @@ void checkRotaryButton() {
   {
     if (!PinBtnRotaryHeld) {
       lcdSelectedTopField = ! lcdSelectedTopField;
-      if (lcdSelectedTopField) {
-        rotaryKnob.write(bpm * 4);
-      }
-      else {
-        int rotaryPosition = 2; // 4/4 by default
-        switch (beatsPerBar) {
-          case 2:
-            rotaryPosition = 0;
-            break;
-          case 3:
-            rotaryPosition = 1;
-            break;
-          case 4:
-            rotaryPosition = 2;
-            break;
-          case 6:
-            rotaryPosition = 3;
-            break;
-        }
-        rotaryKnob.write(rotaryPosition * 4);
-      }
+      UpdateRotary();      
       UpdateSelectedField();
     }
     PinBtnRotaryHeld = true;
@@ -233,13 +208,17 @@ void checkForRotaryTurn() {
     long newBpm;
     newBpm = rotaryKnob.read() / 4;
     if (newBpm != bpm) {
-      bpm = newBpm;
-      UpdateBpm();
+      if(newBpm>=MIN_TEMPO&&newBpm<=MAX_TEMPO){
+        bpm = newBpm;
+        UpdateBpm();
+      }
+      else if (lcdSelectedTopField) {
+        UpdateRotary();
+      }
     }
   } else {
     int newTimeSignature = (rotaryKnob.read() / 4) % 4;
     int newBeatsPerBar = 4;
-    Serial.println(newTimeSignature);
     switch (newTimeSignature) {
       case 0:
         newBeatsPerBar = 2;
@@ -293,19 +272,67 @@ void Reset()
   }
 }
 
+void UpdateRotary(){
+  if (lcdSelectedTopField) {
+    rotaryKnob.write(bpm * 4);
+  }
+  else {
+    int rotaryPosition = 2; // 4/4 by default
+    switch (beatsPerBar) {
+      case 2:
+        rotaryPosition = 0;
+        break;
+      case 3:
+        rotaryPosition = 1;
+        break;
+      case 4:
+        rotaryPosition = 2;
+        break;
+      case 6:
+        rotaryPosition = 3;
+        break;
+    }
+    rotaryKnob.write(rotaryPosition * 4);
+  }
+}
+
+void StoreSetting(int setting){
+  int eeAddress = (setting*sizeof(int)*2);
+  EEPROM.put(eeAddress, settingsButtons[setting].bpm);
+  eeAddress+=sizeof(int);
+  EEPROM.put(eeAddress, settingsButtons[setting].beatsPerBar);
+}
+
+void ReadSetting(int setting){
+  int eeAddress = (setting*sizeof(int)*2);
+  EEPROM.get(eeAddress, settingsButtons[setting].bpm);
+  eeAddress+=sizeof(int);
+  EEPROM.get(eeAddress, settingsButtons[setting].beatsPerBar);
+  if(settingsButtons[setting].bpm<MIN_TEMPO || settingsButtons[setting].bpm>MAX_TEMPO){
+    settingsButtons[setting].bpm = DEFAULT_TEMPO;
+    settingsButtons[setting].beatsPerBar = DEFAULT_TS;
+  }
+}
+
 void UpdateBpm() {
 
   waitInterval = (microSecondsPerMinute / bpm) / pulsesPerBeat;
   Timer1.setPeriod(waitInterval);
+  ShowUpdatedBpm();
+
+  ShowSettingsField();
+}
+
+void ShowUpdatedBpm() {
   lcd.setCursor(5, 0);
   // print the number of seconds since reset:
   lcd.print(bpm);
-  Serial.println("updated bpm");
-  Serial.println(bpm);
   if (bpm < 100) {
     lcd.print(" ");
   }
+}
 
+void ShowSettingsField(){
   String matchingSetting;
   bool matchingSettingFound = false;
   for (int i = 0; i < numSettingButtons; i++) {
@@ -317,21 +344,28 @@ void UpdateBpm() {
   }
 
   if (matchingSettingFound) {
-    lcd.setCursor(13, 0);
-    lcd.print(matchingSetting);
-    SettingsFieldShowing = true;
+    ShowSetting(matchingSetting);
   }
   else if (SettingsFieldShowing) {
-    lcd.setCursor(13, 0);
-    lcd.print("  ");
-    SettingsFieldShowing = false;
+    ShowSetting("  ");
   }
 }
 
 void UpdateTimeSignature() {
+  ShowUpdatedTimeSignature();
+
+  ShowSettingsField();
+}
+
+void ShowUpdatedTimeSignature() {
   lcd.setCursor(6, 1);
   lcd.print(beatsPerBar);
-  lcd.print("/4");
+  lcd.print("/");
+  if(beatsPerBar>=6){
+    lcd.print("8");
+  }else{
+    lcd.print("4");
+  }
 }
 
 void UpdateSelectedField() {
@@ -349,7 +383,7 @@ void UpdateSelectedField() {
 }
 
 void ShowSetting(String name) {
-  lcd.setCursor(13, 0);
+  lcd.setCursor(14, 0);
   lcd.print(name);
   SettingsFieldShowing = true;
 }
