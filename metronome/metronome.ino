@@ -1,3 +1,4 @@
+#include "metronome.h"
 #include <pitches.h>
 #include <Encoder.h>
 #include <SendOnlySoftwareSerial.h>
@@ -10,16 +11,22 @@ const int PinDT = 3;  // Reading DT signal
 const int PinBtnRotary = 4;  // Reading Push Button switch
 
 const int PinBtnStart = A3;
-const int PinBtnStore1 = A2;
-const int PinBtnStore2 = A1;
+const int PinBtnS1 = A2;
+const int PinBtnS2 = A1;
 const int PinBtnTap = A0;
 
+const int buttonHoldMs = 1000;
 
-volatile bool PinBtnStartHeld = false;
-volatile bool PinBtnStore1Held = false;
-volatile bool PinBtnStore2Held = false;
-volatile bool PinBtnTapHeld = false;
-volatile bool PinBtnRotaryHeld = false;
+const int numSettingButtons = 2;
+Settings S1;
+Settings S2;
+Settings settingsButtons[2];
+
+bool PinBtnStartHeld = false;
+bool PinBtnTapHeld = false;
+bool PinBtnRotaryHeld = false;
+
+bool SettingsFieldShowing = false;
 
 volatile bool lcdSelectedTopField = true;
 
@@ -66,11 +73,21 @@ void setup() {
   mySerial.begin(31250);
   Serial.begin(9200);
 
+  settingsButtons[0].bpm = 80;
+  settingsButtons[0].beatsPerBar = 4;
+  settingsButtons[0].name = "S1";
+  settingsButtons[0].pin = PinBtnS1;
+  settingsButtons[1].bpm = 110;
+  settingsButtons[1].beatsPerBar = 3;
+  settingsButtons[1].name = "S2";
+  settingsButtons[1].pin = PinBtnS2;
+
+
   pinMode(PinBuzzer, OUTPUT); //initialize the buzzer pin as an output
   pinMode(PinBtnRotary, INPUT);
   pinMode(PinBtnStart, INPUT_PULLUP);
-  pinMode(PinBtnStore1, INPUT_PULLUP);
-  pinMode(PinBtnStore2, INPUT_PULLUP);
+  pinMode(PinBtnS1, INPUT_PULLUP);
+  pinMode(PinBtnS2, INPUT_PULLUP);
   pinMode(PinBtnTap, INPUT_PULLUP);
   digitalWrite(PinBtnRotary, HIGH); // Pull-Up resistor for switch
 
@@ -87,10 +104,10 @@ void loop() {
   checkForRotaryTurn();
 
   checkStartButton();
-  
+
   checkRotaryButton();
 
-  checkStore1Button();
+  checkSettingsButtons();
 }
 
 void checkForPulse() {
@@ -128,30 +145,65 @@ void checkStartButton() {
 }
 
 
-void checkStore1Button() {
-  if (digitalRead(PinBtnStore1) == LOW)
-  {
-    if (!PinBtnStore1Held) {
-      // store timestamp so we can know if long held
+void checkSettingsButtons() {
+  for (int i = 0; i < numSettingButtons; i++) {
+    if (digitalRead(settingsButtons[i].pin) == LOW)
+    {
+      if (!settingsButtons[i].buttonDown) {
+        Serial.println("!settingsButtons[i].buttonDown");
+        Serial.println(settingsButtons[i].name);
+        // store timestamp so we can know if long held
+        settingsButtons[i].buttonDownStartMs = millis();
+        settingsButtons[i].stored = false;
+      }
+      else if (settingsButtons[i].stored == false && (millis() - settingsButtons[i].buttonDownStartMs) > buttonHoldMs) {
+        Serial.println("LOW");
+        settingsButtons[i].stored = true;
+        settingsButtons[i].bpm = bpm;
+        settingsButtons[i].beatsPerBar = beatsPerBar;
+        ShowSetting(settingsButtons[i].name);
+      }
+      settingsButtons[i].buttonDown = true;
+      if (settingsButtons[i].buttonDown) {
+        Serial.println("yes");
+      } else {
+        Serial.println("no");
+      }
     }
-    PinBtnStore1Held = true;
-  }
-  else {
-    PinBtnStore1Held = false;
+    else {
+      if (settingsButtons[i].buttonDown && !settingsButtons[i].stored) {
+        Serial.println("2");
+        lcd.setCursor(13, 0);
+        lcd.print(settingsButtons[i].name);
+        if (bpm != settingsButtons[i].bpm) {
+          bpm = settingsButtons[i].bpm;
+          UpdateBpm();
+          if (lcdSelectedTopField) {
+            rotaryKnob.write(bpm * 4);
+          }
+        }
+        if (beatsPerBar != settingsButtons[i].beatsPerBar) {
+          Serial.println("update ts");
+          beatsPerBar = settingsButtons[i].beatsPerBar;
+          UpdateTimeSignature();
+        }
+      }
+      settingsButtons[i].buttonDown = false;
+    }
   }
 }
 
-void checkRotaryButton(){
+void checkRotaryButton() {
   if (digitalRead(PinBtnRotary) == LOW)
   {
     if (!PinBtnRotaryHeld) {
       lcdSelectedTopField = ! lcdSelectedTopField;
-      if(lcdSelectedTopField){
+      if (lcdSelectedTopField) {
         rotaryKnob.write(bpm * 4);
       }
-      else{
+      else {
         int rotaryPosition = 2; // 4/4 by default
-          switch (beatsPerBar) {
+        switch (beatsPerBar) {
           case 2:
             rotaryPosition = 0;
             break;
@@ -165,7 +217,7 @@ void checkRotaryButton(){
             rotaryPosition = 3;
             break;
         }
-        rotaryKnob.write(rotaryPosition*4);
+        rotaryKnob.write(rotaryPosition * 4);
       }
       UpdateSelectedField();
     }
@@ -248,8 +300,31 @@ void UpdateBpm() {
   lcd.setCursor(5, 0);
   // print the number of seconds since reset:
   lcd.print(bpm);
-  if(bpm<100){
+  Serial.println("updated bpm");
+  Serial.println(bpm);
+  if (bpm < 100) {
     lcd.print(" ");
+  }
+
+  String matchingSetting;
+  bool matchingSettingFound = false;
+  for (int i = 0; i < numSettingButtons; i++) {
+    if (bpm == settingsButtons[i].bpm && beatsPerBar == settingsButtons[i].beatsPerBar) {
+      matchingSettingFound = true;
+      matchingSetting = settingsButtons[i].name;
+      break;
+    }
+  }
+
+  if (matchingSettingFound) {
+    lcd.setCursor(13, 0);
+    lcd.print(matchingSetting);
+    SettingsFieldShowing = true;
+  }
+  else if (SettingsFieldShowing) {
+    lcd.setCursor(13, 0);
+    lcd.print("  ");
+    SettingsFieldShowing = false;
   }
 }
 
@@ -271,6 +346,12 @@ void UpdateSelectedField() {
     lcd.setCursor(0, 1);
     lcd.print(">");
   }
+}
+
+void ShowSetting(String name) {
+  lcd.setCursor(13, 0);
+  lcd.print(name);
+  SettingsFieldShowing = true;
 }
 
 void SendMidiCommand(byte command) {
