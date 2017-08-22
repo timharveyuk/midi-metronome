@@ -10,7 +10,8 @@
 const int PinCLK = 2; // Generating interrupts using CLK signal
 const int PinDT = 3;  // Reading DT signal
 const int PinBtnRotary = 4;  // Reading Push Button switch
-
+const int PinMidi = 5;
+const int PinBuzzer = 6;//the pin of the active buzzer
 const int PinBtnStart = A3;
 const int PinBtnS1 = A2;
 const int PinBtnS2 = A1;
@@ -19,9 +20,7 @@ const int PinBtnTap = A0;
 const int buttonHoldMs = 1000;
 
 const int numSettingButtons = 2;
-Settings S1;
-Settings S2;
-Settings settingsButtons[2];
+Settings settingsButtons[numSettingButtons];
 
 bool PinBtnStartHeld = false;
 bool PinBtnTapHeld = false;
@@ -56,23 +55,18 @@ unsigned long waitInterval = 0;
 int pulseCount = -1;
 int beatCount = -1;
 
-// If using buzzer
-int PinBuzzer = 6;//the pin of the active buzzer
-int newBarBuzzerWait = 15;
-int inBarBuzzerWait = 8;
-
-SendOnlySoftwareSerial mySerial(5);
+SendOnlySoftwareSerial midiSerial(PinMidi);
 
 void setup() {
+  midiSerial.begin(31250);
+  Serial.begin(9200);
+  
   lcd.begin(16, 2);
   lcd.setCursor(0, 0);
   lcd.print(">bpm: ");
   lcd.setCursor(0, 1);
   lcd.print(" time: ");
   UpdateTimeSignature();
-
-  mySerial.begin(31250);
-  Serial.begin(9200);
 
   settingsButtons[0].name = "S1";
   settingsButtons[0].pin = PinBtnS1;
@@ -134,7 +128,7 @@ void checkStartButton() {
   if (digitalRead(PinBtnStart) == LOW)
   {
     if (!PinBtnStartHeld) {
-      Reset();
+      StartButtonPressed();
     }
     PinBtnStartHeld = true;
   }
@@ -259,7 +253,7 @@ void beepInBar() {
   // digitalWrite(PinBuzzer, LOW);
 }
 
-void Reset()
+void StartButtonPressed()
 {
   isRunning = !isRunning;
   if (!isRunning) {
@@ -389,7 +383,7 @@ void ShowSetting(String name) {
 }
 
 void SendMidiCommand(byte command) {
-  mySerial.write(0xFF);
-  mySerial.write(command);
+  midiSerial.write(0xFF);
+  midiSerial.write(command);
 }
 
