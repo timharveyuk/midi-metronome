@@ -33,7 +33,7 @@ volatile bool lcdSelectedTopField = true;
 
 Encoder rotaryKnob(PinCLK, PinDT);
 
-LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
+LiquidCrystal lcd(12,11,10,9,8,7);
 
 volatile bool sendMidiClock = false;
 volatile bool isRunning = false;
