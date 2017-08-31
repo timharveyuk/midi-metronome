@@ -12,21 +12,32 @@ const int PinDT = 3;  // Reading DT signal
 const int PinBtnRotary = 4;  // Reading Push Button switch
 const int PinMidi = 5;
 const int PinBuzzer = 6;//the pin of the active buzzer
-const int PinBtnStart = A3;
-const int PinBtnS1 = A2;
-const int PinBtnS2 = A1;
-const int PinBtnTap = A0;
+const int PinBtnStart = A0;
+const int PinBtnS1 = A1;
+const int PinBtnS2 = A2;
+const int PinBtnS3 = A3;
+const int PinAudioJack = A5;
+const int PinLED = 13;
+
+unsigned long btnLastDebounceTime = 0;
+unsigned long debounceDelay = 50;
 
 const int buttonHoldMs = 1000;
 
-const int numSettingButtons = 2;
+const int numSettingButtons = 3;
 Settings settingsButtons[numSettingButtons];
 
 bool PinBtnStartHeld = false;
 bool PinBtnTapHeld = false;
 bool PinBtnRotaryHeld = false;
+bool startButtonPressAccepted = false;
 
 bool SettingsFieldShowing = false;
+
+bool useBuzzer = false;
+
+unsigned long ledLitTime;
+bool ledLit = false;
 
 volatile bool lcdSelectedTopField = true;
 
@@ -72,16 +83,23 @@ void setup() {
   settingsButtons[0].pin = PinBtnS1;
   settingsButtons[1].name = "S2";
   settingsButtons[1].pin = PinBtnS2;
+  settingsButtons[2].name = "S3";
+  settingsButtons[2].pin = PinBtnS3;
   for(int i=0;i<numSettingButtons;i++){
     ReadSetting(i);
   }
+  
 
   pinMode(PinBuzzer, OUTPUT); //initialize the buzzer pin as an output
   pinMode(PinBtnRotary, INPUT);
   pinMode(PinBtnStart, INPUT_PULLUP);
   pinMode(PinBtnS1, INPUT_PULLUP);
   pinMode(PinBtnS2, INPUT_PULLUP);
-  pinMode(PinBtnTap, INPUT_PULLUP);
+  pinMode(PinBtnS1, INPUT_PULLUP);
+  pinMode(PinBtnS3, INPUT_PULLUP);
+  pinMode(PinAudioJack, OUTPUT);
+  pinMode(PinLED, OUTPUT);
+ 
   digitalWrite(PinBtnRotary, HIGH); // Pull-Up resistor for switch
 
   rotaryKnob.write(bpm * 4);
@@ -101,6 +119,15 @@ void loop() {
   checkRotaryButton();
 
   checkSettingsButtons();
+
+  checkLed();
+}
+
+void checkLed(){
+  if(ledLit && (millis()-ledLitTime)>50){
+    ledLit = false;
+    digitalWrite(PinLED, LOW);
+  }
 }
 
 void checkForPulse() {
@@ -109,13 +136,18 @@ void checkForPulse() {
     pulseCount = (pulseCount + 1) % pulsesPerBeat;
     if (pulseCount == 0) {
       beatCount = (beatCount + 1) % beatsPerBar;
-      //Serial.print(beatCount);
+      Serial.print(beatCount);
+           
       if (beatCount == 0) {
         beepNewBar();
       }
       else {
         beepInBar();
       }
+
+      digitalWrite(PinLED, HIGH);   // Turn on the LED
+      ledLitTime = millis();
+      ledLit = true;
     }
     else {
       SendMidiCommand(midiClock);
@@ -124,15 +156,25 @@ void checkForPulse() {
   }
 }
 
-void checkStartButton() {
+void checkStartButton() {  
   if (digitalRead(PinBtnStart) == LOW)
   {
     if (!PinBtnStartHeld) {
-      StartButtonPressed();
+      Serial.println("2");      
+      btnLastDebounceTime = millis();
+    }
+    else{
+      if ((millis() - btnLastDebounceTime) > debounceDelay) {
+        if(!startButtonPressAccepted){
+          StartButtonPressed();
+          startButtonPressAccepted = true;
+        }
+      }
     }
     PinBtnStartHeld = true;
   }
   else {
+    startButtonPressAccepted = false;
     PinBtnStartHeld = false;
   }
 }
@@ -235,22 +277,23 @@ void checkForRotaryTurn() {
 }
 
 void beepNewBar() {
-
-  //digitalWrite(PinBuzzer, HIGH);
-  tone(PinBuzzer, NOTE_G7, 30);
+  if(useBuzzer){
+    tone(PinBuzzer, NOTE_G7, 30);
+  }
+  else{
+    tone(PinAudioJack, NOTE_G7, 30);
+  }
   SendMidiCommand(midiClock);
-
-  //delay(newBarBuzzerWait - 3);
-  // digitalWrite(PinBuzzer, LOW);
 }
 
-void beepInBar() {
-  // digitalWrite(PinBuzzer, HIGH);
-  tone(PinBuzzer, NOTE_C6, 20);
+void beepInBar() { 
+  if(useBuzzer){
+    tone(PinBuzzer, NOTE_C6, 20);
+  }
+  else{
+    tone(PinAudioJack, NOTE_C6, 30);  
+  }
   SendMidiCommand(midiClock);
-
-  // delay(inBarBuzzerWait - 3);
-  // digitalWrite(PinBuzzer, LOW);
 }
 
 void StartButtonPressed()
